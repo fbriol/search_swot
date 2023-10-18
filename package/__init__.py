@@ -63,7 +63,7 @@ class DateSelection():
         self.last_date = ipywidgets.DatePicker(description='Last date:',
                                                disabled=False,
                                                value=datetime.date.today() +
-                                               datetime.timedelta(days=1))
+                                               datetime.timedelta(days=21))
 
     def display(self) -> ipywidgets.Widget:
         return ipywidgets.VBox([self.start_date, self.last_date])
