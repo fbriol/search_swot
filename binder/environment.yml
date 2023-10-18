@@ -1,0 +1,8 @@
+name: where_is_swot
+channels:
+  - conda-forge
+dependencies:
+  - pandas
+  - pyinterp
+  - ipyleaflet
+  - ipywidgets

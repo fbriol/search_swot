@@ -1,0 +1,64 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: check-case-conflict
+      - id: check-docstring-first
+      - id: check-json
+      - id: check-toml
+      - id: debug-statements
+      - id: end-of-file-fixer
+      - id: double-quote-string-fixer
+      - id: mixed-line-ending
+        args: [--fix=lf]
+        exclude: docs/make.bat
+      - id: trailing-whitespace
+        exclude: conda/meta.yaml
+  - repo: https://github.com/asottile/pyupgrade
+    rev: "v3.13.0"
+    hooks:
+    - id: pyupgrade
+      args: [--py310-plus]
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+  - repo: https://github.com/PyCQA/flake8
+    rev: 6.1.0
+    hooks:
+      - id: flake8
+        exclude: tests
+  - repo: https://github.com/pre-commit/pygrep-hooks
+    rev: "v1.10.0"
+    hooks:
+    - id: python-check-blanket-noqa
+    - id: python-no-log-warn
+    - id: rst-backticks
+    - id: rst-directive-colons
+    - id: rst-inline-touching-normal
+  - repo: https://github.com/pre-commit/mirrors-yapf
+    rev: v0.32.0
+    hooks:
+      - id: yapf
+        additional_dependencies:
+          - toml
+  - repo: https://github.com/myint/docformatter
+    rev: "v1.7.5"
+    hooks:
+    - id: docformatter
+  - repo: https://github.com/codespell-project/codespell
+    rev: "v2.2.5"
+    hooks:
+    - id: codespell
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.5.1
+    hooks:
+      - id: mypy
+        exclude: docs
+        additional_dependencies:
+          # Type stubs
+          - types-requests
+          - types-setuptools
+          # Typed libraries
+          - numpy
+          - pandas
