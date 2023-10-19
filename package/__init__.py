@@ -92,7 +92,7 @@ class MapSelection():
         self.markers: list[ipyleaflet.Marker] = []
 
         self.date_selection = DateSelection()
-        self.compute = ipywidgets.Button(description='Compute')
+        self.search = ipywidgets.Button(description='Search')
 
         self.m = ipyleaflet.Map(center=[0, 0], zoom=2, layout=layout)
         self.m.scroll_wheel_zoom = True
@@ -102,13 +102,13 @@ class MapSelection():
             ipyleaflet.WidgetControl(widget=self.date_selection.display(),
                                      position='topright'))
         self.m.add_control(
-            ipyleaflet.WidgetControl(widget=self.compute,
+            ipyleaflet.WidgetControl(widget=self.search,
                                      position='bottomright'))
         self.out = ipywidgets.Output()
 
         self.main_widget = ipywidgets.VBox([self.m, self.out])
         draw_control.on_draw(self.handle_draw)
-        self.compute.on_click(self.handle_compute)
+        self.search.on_click(self.handle_compute)
         self.widget_error = None
 
     def display(self) -> ipywidgets.Widget:
@@ -151,7 +151,7 @@ class MapSelection():
                     self.display_error(
                         'Please select an area by drawing a rectangle on the '
                         'map, then click on the <b>Compute</b> button.')
-                self.compute.on_click(self.handle_compute)
+                self.search.on_click(self.handle_compute)
 
                 return
             selected_passes = compute_selected_passes(self.date_selection,
@@ -338,6 +338,10 @@ def compute_selected_passes(date_selection: DateSelection,
     selected_passes['first_measurement'] += selected_passes['first_time']
     selected_passes['last_measurement'] += selected_passes['last_time']
     selected_passes.drop(columns=['first_time', 'last_time'], inplace=True)
+    selected_passes['first_measurement'] = selected_passes[
+        'first_measurement'].dt.floor('s')
+    selected_passes['last_measurement'] = selected_passes[
+        'last_measurement'].dt.floor('s')
     selected_passes.reset_index(drop=True, inplace=True)
     return selected_passes
 
