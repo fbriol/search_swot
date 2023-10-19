@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import pathlib
+import traceback
 
 import IPython.display
 import ipyleaflet
@@ -51,6 +52,10 @@ COLORS: list[str] = [
     'transparent', 'turquoise', 'violet', 'wheat', 'white', 'whitesmoke',
     'yellow', 'yellowgreen'
 ]
+
+
+class InvalidDate(Exception):
+    pass
 
 
 class DateSelection():
@@ -120,14 +125,19 @@ class MapSelection():
     def handle_error(self, *args) -> None:
         self.m.remove_control(self.m.controls[-1])
         self.widget_error = None
+        self.search.disabled = False
 
-    def clear_last_selection(self) -> None:
+    def clear_last_layers(self) -> None:
         for item in self.markers:
             self.m.remove(item)
         self.markers.clear()
         for item in self.layers:
             self.m.remove(item)
         self.layers.clear()
+        self.out.clear_output()
+
+    def clear_last_selection(self) -> None:
+        self.clear_last_layers()
         self.selection = None
 
     def handle_draw(self, target, action, geo_json) -> None:
@@ -175,6 +185,7 @@ class MapSelection():
         self.m.add_control(
             ipyleaflet.WidgetControl(widget=self.widget_error,
                                      position='bottomright'))
+        self.search.disabled = True
 
     def handle_compute(self, args) -> None:
         try:
@@ -183,10 +194,8 @@ class MapSelection():
                     self.display_error(
                         'Please select an area by drawing a rectangle on the '
                         'map, then click on the <b>Compute</b> button.')
-                self.search.on_click(self.handle_compute)
-
                 return
-            self.out.clear_output()
+            self.clear_last_layers()
             with self.out:
                 IPython.display.display('Computing...')
             selected_passes = compute_selected_passes(self.date_selection,
@@ -202,9 +211,13 @@ class MapSelection():
             self.out.clear_output()
             with self.out:
                 IPython.display.display(selected_passes)
+        except InvalidDate as err:
+            self.out.clear_output()
+            self.display_error(str(err))
         except Exception as err:
-            import traceback
-            self.display_error(str(err) + '<br>' + traceback.format_exc())
+            self.out.clear_output()
+            self.display_error(
+                str(err) + '<br>'.join(traceback.format_exc().splitlines()))
 
 
 class MainWidget():
@@ -357,7 +370,7 @@ def compute_selected_passes(date_selection: DateSelection,
         raise ValueError('No area selected.')
     first_date, search_duration = date_selection.values()
     if search_duration < numpy.timedelta64(0, 'D'):
-        raise ValueError('First date must be before last date.')
+        raise InvalidDate('First date must be before last date.')
     selected_passes = get_selected_passes(first_date, search_duration)
     pass_passage_time = get_pass_passage_time(selected_passes,
                                               map_selection.selection)
@@ -378,6 +391,40 @@ def compute_selected_passes(date_selection: DateSelection,
     return selected_passes
 
 
+def plot_swath(
+    pass_number: int,
+    item: pyinterp.geodetic.Polygon,
+    bbox: pyinterp.geodetic.Polygon,
+    layers: list[ipyleaflet.Polygon],
+    markers: list[ipyleaflet.Marker] | None = None,
+) -> None:
+    item = item.intersection(bbox)
+    if len(item) == 0:
+        return
+    outer = item[0].outer
+
+    lons = numpy.array([p.lon for p in outer])
+    lats = numpy.array([p.lat for p in outer])
+    if lons.min() < -180:
+        lons[lons < 0] += 360
+        lons -= 360
+    elif lons.max() > 180:
+        lons[lons > 0] -= 360
+        lons += 360
+
+    color_id = pass_number % len(COLORS)
+    poly = ipyleaflet.Polygon(
+        locations=[(y, x) for x, y in zip(lons, lats)],
+        color=COLORS[color_id],
+        fill_color=COLORS[color_id],
+    )
+    if markers is not None:
+        marker = ipyleaflet.Marker(location=(lats[0], lons[0]))
+        marker.popup = ipywidgets.HTML(f'Pass {pass_number}')
+        markers.append(marker)
+    layers.append(poly)
+
+
 def plot_selected_passes(map_selection: MapSelection,
                          df: pandas.DataFrame) -> tuple[list, list]:
     polygon = map_selection.selection
@@ -386,37 +433,18 @@ def plot_selected_passes(map_selection: MapSelection,
 
     left_swath, right_swath = load_polygons(df['pass_number'].values)
 
-    layers = []
-    markers = []
+    left_layers: list[ipyleaflet.Polygon] = []
+    right_layers: list[ipyleaflet.Polygon] = []
+    markers: list[ipyleaflet.Marker] = []
 
     for pass_number, item in left_swath:
-        item = item.intersection(bbox)
-        if len(item) == 0:
-            continue
-        outer = item[0].outer
-        color_id = pass_number % len(COLORS)
-        poly = ipyleaflet.Polygon(
-            locations=[(p.lat, p.lon) for p in outer],
-            color=COLORS[color_id],
-            fill_color=COLORS[color_id],
-        )
-        marker = ipyleaflet.Marker(location=(outer[1].lat, outer[1].lon))
-        marker.popup = ipywidgets.HTML(f'Pass {pass_number}')
-
-        markers.append(marker)
-        layers.append(poly)
+        plot_swath(pass_number, item, bbox, left_layers, markers)
 
     for pass_number, item in right_swath:
-        item = item.intersection(bbox)
-        if len(item) == 0:
-            continue
-        outer = item[0].outer
-        color_id = pass_number % len(COLORS)
-        poly = ipyleaflet.Polygon(
-            locations=[(p.lat, p.lon) for p in outer],
-            color=COLORS[color_id],
-            fill_color=COLORS[color_id],
-        )
-        layers.append(poly)
+        plot_swath(pass_number, item, bbox, right_layers)
+
+    layers = [None] * (len(left_layers) * 2)
+    layers[::2] = left_layers
+    layers[1::2] = right_layers
 
     return markers, layers
