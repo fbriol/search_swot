@@ -63,7 +63,7 @@ class DateSelection():
         self.last_date = ipywidgets.DatePicker(description='Last date:',
                                                disabled=False,
                                                value=datetime.date.today() +
-                                               datetime.timedelta(days=21))
+                                               datetime.timedelta(days=1))
 
     def display(self) -> ipywidgets.Widget:
         return ipywidgets.VBox([self.start_date, self.last_date])
@@ -86,7 +86,7 @@ class MapSelection():
         draw_control.circlemarker = {}
         draw_control.rectangle = {'shapeOptions': {'color': '#0000FF'}}
         draw_control.circle = {}
-        draw_control.edit = True
+        draw_control.edit = False
 
         self.layers: list[ipyleaflet.Polygon] = []
         self.markers: list[ipyleaflet.Marker] = []
@@ -94,7 +94,10 @@ class MapSelection():
         self.date_selection = DateSelection()
         self.search = ipywidgets.Button(description='Search')
 
-        self.m = ipyleaflet.Map(center=[0, 0], zoom=2, layout=layout)
+        self.m = ipyleaflet.Map(center=[0, 0],
+                                zoom=2,
+                                layout=layout,
+                                projection=ipyleaflet.projections.EPSG4326)
         self.m.scroll_wheel_zoom = True
         self.m.add_control(ipyleaflet.FullScreenControl())
         self.m.add_control(draw_control)
@@ -118,11 +121,40 @@ class MapSelection():
         self.m.remove_control(self.m.controls[-1])
         self.widget_error = None
 
+    def clear_last_selection(self) -> None:
+        for item in self.markers:
+            self.m.remove(item)
+        self.markers.clear()
+        for item in self.layers:
+            self.m.remove(item)
+        self.layers.clear()
+        self.selection = None
+
     def handle_draw(self, target, action, geo_json) -> None:
+        if action == 'deleted':
+            self.clear_last_selection()
+            return
+
+        if action != 'created':
+            return
+
+        self.clear_last_selection()
+
         try:
             coordinates = geo_json['geometry']['coordinates']
-            print(coordinates)
-            points = [pyinterp.geodetic.Point(x, y) for x, y in coordinates[0]]
+
+            # Build a polygon with interpolated longitudes between the first and
+            # last points to restrict the search area to the latitude of the
+            # selected zone.
+            x = [item[0] for item in coordinates[0]]
+            y = [item[1] for item in coordinates[0]]
+            x0, x1 = x[0], x[2]
+            y0, y1 = y[0], y[1]
+            xs = numpy.linspace(x0, x1, round(x1 - x0) * 2, endpoint=True)
+            points = [
+                pyinterp.geodetic.Point(item, y0) for item in reversed(xs)
+            ] + [pyinterp.geodetic.Point(item, y1) for item in xs]
+            points.append(points[0])
             self.selection = pyinterp.geodetic.Polygon(points)
         except (KeyError, IndexError):
             self.selection = None
@@ -154,13 +186,11 @@ class MapSelection():
                 self.search.on_click(self.handle_compute)
 
                 return
+            self.out.clear_output()
+            with self.out:
+                IPython.display.display('Computing...')
             selected_passes = compute_selected_passes(self.date_selection,
                                                       self)
-
-            for item in self.markers:
-                self.m.remove(item)
-            for item in self.layers:
-                self.m.remove(item)
 
             self.markers, self.layers = plot_selected_passes(
                 self, selected_passes)
@@ -281,8 +311,10 @@ def get_pass_passage_time(
             lat_nadir = lat_nadir[numpy.isfinite(lat_nadir)]
             if lat_nadir[0] > lat_nadir[-1]:
                 lat_nadir = lat_nadir[::-1]
-            t0 = numpy.searchsorted(lat_nadir, intersection[0].lat)
-            t1 = numpy.searchsorted(lat_nadir, intersection[1].lat)
+            y0 = intersection[0].lat
+            y1 = intersection[1].lat if len(intersection) > 1 else y0
+            t0 = numpy.searchsorted(lat_nadir, y0)
+            t1 = numpy.searchsorted(lat_nadir, y1)
             selected_time = pass_time[ix, :]
             result[jx]['pass_number'] = pass_index + 1
             result[jx]['first_time'] = selected_time[min(t0, t1)]
