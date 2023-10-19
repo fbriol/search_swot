@@ -83,6 +83,7 @@ class MapSelection():
     def __init__(self) -> None:
         super().__init__()
         self.selection = None
+        self.bounds = [[-180, -90], [180, 90]]
         layout = ipywidgets.Layout(width='100%', height='600px')
 
         draw_control = ipyleaflet.DrawControl()
@@ -139,6 +140,7 @@ class MapSelection():
     def clear_last_selection(self) -> None:
         self.clear_last_layers()
         self.selection = None
+        self.bounds = [[-180, -90], [180, 90]]
 
     def handle_draw(self, target, action, geo_json) -> None:
         if action == 'deleted':
@@ -156,11 +158,12 @@ class MapSelection():
             # Build a polygon with interpolated longitudes between the first and
             # last points to restrict the search area to the latitude of the
             # selected zone.
-            x = [item[0] for item in coordinates[0]]
-            y = [item[1] for item in coordinates[0]]
+            x = numpy.array([item[0] for item in coordinates[0]])
+            y = numpy.array([item[1] for item in coordinates[0]])
             x0, x1 = x[0], x[2]
             y0, y1 = y[0], y[1]
             xs = numpy.linspace(x0, x1, round(x1 - x0) * 2, endpoint=True)
+            self.bounds = [[min(x), min(y)], [max(x), max(y)]]
             points = [
                 pyinterp.geodetic.Point(item, y0) for item in reversed(xs)
             ] + [pyinterp.geodetic.Point(item, y1) for item in xs]
@@ -207,7 +210,7 @@ class MapSelection():
                 self.m.add_layer(item)
             for item in self.markers:
                 self.m.add_layer(item)
-
+            self.m.fit_bounds(self.bounds)
             self.out.clear_output()
             with self.out:
                 IPython.display.display(selected_passes)
@@ -396,6 +399,8 @@ def plot_swath(
     item: pyinterp.geodetic.Polygon,
     bbox: pyinterp.geodetic.Polygon,
     layers: list[ipyleaflet.Polygon],
+    east: float,
+    west: float,
     markers: list[ipyleaflet.Marker] | None = None,
 ) -> None:
     item = item.intersection(bbox)
@@ -419,7 +424,12 @@ def plot_swath(
         fill_color=COLORS[color_id],
     )
     if markers is not None:
-        marker = ipyleaflet.Marker(location=(lats[0], lons[0]))
+        size = lons.size // 8
+        index = max(size, 0) if pass_number % 2 == 0 else min(
+            size * 7, size - 1)
+        marker = ipyleaflet.Marker(location=(lats[index], lons[index]))
+        marker.draggable = False
+        marker.opacity = 0.8
         marker.popup = ipywidgets.HTML(f'Pass {pass_number}')
         markers.append(marker)
     layers.append(poly)
@@ -438,10 +448,13 @@ def plot_selected_passes(map_selection: MapSelection,
     markers: list[ipyleaflet.Marker] = []
 
     for pass_number, item in left_swath:
-        plot_swath(pass_number, item, bbox, left_layers, markers)
+        plot_swath(pass_number, item, bbox, left_layers,
+                   map_selection.bounds[0][0], map_selection.bounds[1][0],
+                   markers)
 
     for pass_number, item in right_swath:
-        plot_swath(pass_number, item, bbox, right_layers)
+        plot_swath(pass_number, item, bbox, right_layers,
+                   map_selection.bounds[0][0], map_selection.bounds[1][0])
 
     layers = [None] * (len(left_layers) * 2)
     layers[::2] = left_layers
