@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import dataclasses
 import datetime
-import pathlib
 import traceback
 
 import IPython.display
@@ -12,11 +12,7 @@ import pandas
 import pyinterp.geodetic
 import xarray
 
-from . import orf
-
-ORF = pathlib.Path(__file__).parent / 'SWOT_ORF.txt'
-
-ORBIT = pathlib.Path(__file__).parent / 'SWOT_orbit.nc'
+from . import orbit
 
 PASSES_PER_CYCLE = 584
 
@@ -52,6 +48,13 @@ COLORS: list[str] = [
     'transparent', 'turquoise', 'violet', 'wheat', 'white', 'whitesmoke',
     'yellow', 'yellowgreen'
 ]
+
+
+@dataclasses.dataclass
+class Swath:
+    left: ipyleaflet.Polygon
+    right: ipyleaflet.Polygon
+    marker: ipyleaflet.Marker
 
 
 class InvalidDate(Exception):
@@ -94,8 +97,7 @@ class MapSelection():
         draw_control.circle = {}
         draw_control.edit = False
 
-        self.layers: list[ipyleaflet.Polygon] = []
-        self.markers: list[ipyleaflet.Marker] = []
+        self.swaths: list[Swath] = []
 
         self.date_selection = DateSelection()
         self.search = ipywidgets.Button(description='Search')
@@ -129,12 +131,11 @@ class MapSelection():
         self.search.disabled = False
 
     def clear_last_layers(self) -> None:
-        for item in self.markers:
-            self.m.remove(item)
-        self.markers.clear()
-        for item in self.layers:
-            self.m.remove(item)
-        self.layers.clear()
+        for item in self.swaths:
+            self.m.remove(item.left)
+            self.m.remove(item.right)
+            self.m.remove(item.marker)
+        self.swaths.clear()
         self.out.clear_output()
 
     def clear_last_selection(self) -> None:
@@ -204,13 +205,11 @@ class MapSelection():
             selected_passes = compute_selected_passes(self.date_selection,
                                                       self)
 
-            self.markers, self.layers = plot_selected_passes(
-                self, selected_passes)
-            for item in self.layers:
-                self.m.add_layer(item)
-            for item in self.markers:
-                self.m.add_layer(item)
-            self.m.fit_bounds(self.bounds)
+            self.swaths = plot_selected_passes(self, selected_passes)
+            for item in self.swaths:
+                self.m.add_layer(item.left)
+                self.m.add_layer(item.right)
+                self.m.add_layer(item.marker)
             self.out.clear_output()
             with self.out:
                 IPython.display.display(selected_passes)
@@ -239,107 +238,6 @@ class MainWidget():
         return self.panel
 
 
-def get_cycle_duration(dataset: xarray.Dataset) -> numpy.timedelta64:
-    start_time = dataset.start_time[0].values
-    end_time = dataset.end_time[-1].values
-    return end_time - start_time
-
-
-def calculate_cycle_axis(
-        cycle_duration: numpy.timedelta64) -> pyinterp.TemporalAxis:
-    cycles = orf.load(ORF)
-
-    cycle_first_measurement = numpy.full((200, ),
-                                         numpy.datetime64('NAT'),
-                                         dtype='M8[ns]')
-    for item in sorted(cycles):
-        cycle_first_measurement[item - 1] = cycles[item]
-    undefined = numpy.isnat(cycle_first_measurement)
-    cycle_first_measurement[undefined] = numpy.full(
-        (undefined.sum(), ), cycle_duration, dtype='m8[ns]') * numpy.arange(
-            1, 1 + undefined.sum()) + cycles[item]
-    return pyinterp.TemporalAxis(cycle_first_measurement)
-
-
-def get_selected_passes(
-        date: numpy.datetime64,
-        search_duration: numpy.timedelta64 | None = None
-) -> pyinterp.TemporalAxis:
-    with xarray.open_dataset(ORBIT.resolve()) as ds:
-        cycle_duration = get_cycle_duration(ds)
-        search_duration = search_duration or cycle_duration
-        axis = calculate_cycle_axis(cycle_duration)
-        dates = numpy.array([date, date + search_duration])
-        indices = axis.find_indexes(dates).ravel()
-        cycle_numbers = numpy.repeat(
-            numpy.arange(indices[0], indices[-1]) + 1, PASSES_PER_CYCLE)
-        axis_slice = axis[indices[0]:indices[-1] + 1]
-        pass_numbers = numpy.tile(numpy.arange(1, PASSES_PER_CYCLE + 1),
-                                  indices[-1] - indices[0])
-        dates_of_selected_passes = numpy.vstack(
-            (ds.start_time.values, ) * len(axis_slice)).T + axis_slice
-        dates_of_selected_passes = dates_of_selected_passes.T.ravel()
-        selected_passes = pyinterp.TemporalAxis(
-            dates_of_selected_passes).find_indexes(dates).ravel()
-        size = selected_passes[-1] - selected_passes[0]
-
-        result: numpy.ndarray = numpy.ndarray(
-            (size, ),
-            dtype=[('cycle_number', numpy.uint16),
-                   ('pass_number', numpy.uint16),
-                   ('first_measurement', 'M8[ns]'),
-                   ('last_measurement', 'M8[ns]')])
-        axis_slice = slice(selected_passes[0], selected_passes[-1])
-        result['cycle_number'] = cycle_numbers[axis_slice]
-        result['pass_number'] = pass_numbers[axis_slice]
-        result['first_measurement'] = dates_of_selected_passes[axis_slice]
-        result['last_measurement'] = dates_of_selected_passes[axis_slice]
-        return pandas.DataFrame(result)
-
-
-def get_pass_passage_time(
-        selected_passes: numpy.ndarray,
-        polygon: pyinterp.geodetic.Polygon | None) -> numpy.ndarray:
-    passes = numpy.array(sorted(set(selected_passes['pass_number']))) - 1
-    with xarray.open_dataset(ORBIT) as ds:
-        lon = ds.line_string_lon[passes, :].values
-        lat = ds.line_string_lat[passes, :].values
-        pass_time = ds.pass_time[passes, :].values
-
-    result: numpy.ndarray = numpy.ndarray((len(passes), ),
-                                          dtype=[('pass_number', numpy.uint16),
-                                                 ('first_time', 'm8[ns]'),
-                                                 ('last_time', 'm8[ns]')])
-
-    jx = 0
-
-    for ix, pass_index in enumerate(passes):
-        line_string = pyinterp.geodetic.LineString([
-            pyinterp.geodetic.Point(x, y)
-            for x, y in zip(lon[ix, :], lat[ix, :])
-            if numpy.isfinite(x) and numpy.isfinite(y)
-        ])
-        intersection = polygon.intersection(
-            line_string) if polygon else line_string
-        if intersection:
-            lat_nadir = ds.lat_nadir[pass_index, :].values
-            # Remove NaN values
-            lat_nadir = lat_nadir[numpy.isfinite(lat_nadir)]
-            if lat_nadir[0] > lat_nadir[-1]:
-                lat_nadir = lat_nadir[::-1]
-            y0 = intersection[0].lat
-            y1 = intersection[1].lat if len(intersection) > 1 else y0
-            t0 = numpy.searchsorted(lat_nadir, y0)
-            t1 = numpy.searchsorted(lat_nadir, y1)
-            selected_time = pass_time[ix, :]
-            result[jx]['pass_number'] = pass_index + 1
-            result[jx]['first_time'] = selected_time[min(t0, t1)]
-            result[jx]['last_time'] = selected_time[max(t0, t1)]
-            jx += 1
-
-    return pandas.DataFrame(result[:jx])
-
-
 def _load_one_polygons(x, y):
     m = numpy.isfinite(x) & numpy.isfinite(y)
     x = x[m]
@@ -354,7 +252,7 @@ def load_polygons(pass_number: numpy.ndarray):
     left_polygon = []
     right_polygon = []
 
-    with xarray.open_dataset(ORBIT) as ds:
+    with xarray.open_dataset(orbit.DATASET) as ds:
         for ix in index:
             left_polygon.append(
                 (ix + 1,
@@ -374,9 +272,9 @@ def compute_selected_passes(date_selection: DateSelection,
     first_date, search_duration = date_selection.values()
     if search_duration < numpy.timedelta64(0, 'D'):
         raise InvalidDate('First date must be before last date.')
-    selected_passes = get_selected_passes(first_date, search_duration)
-    pass_passage_time = get_pass_passage_time(selected_passes,
-                                              map_selection.selection)
+    selected_passes = orbit.get_selected_passes(first_date, search_duration)
+    pass_passage_time = orbit.get_pass_passage_time(selected_passes,
+                                                    map_selection.selection)
     selected_passes = selected_passes.join(
         pass_passage_time.set_index('pass_number'),
         on='pass_number',
@@ -398,32 +296,39 @@ def plot_swath(
     pass_number: int,
     item: pyinterp.geodetic.Polygon,
     bbox: pyinterp.geodetic.Polygon,
-    layers: list[ipyleaflet.Polygon],
+    layers: dict[int, ipyleaflet.Polygon],
+    markers: dict[int, ipyleaflet.Marker],
     east: float,
     west: float,
-    markers: list[ipyleaflet.Marker] | None = None,
 ) -> None:
     item = item.intersection(bbox)
     if len(item) == 0:
         return
     outer = item[0].outer
 
-    lons = numpy.array([p.lon for p in outer])
+    lons = pyinterp.geodetic.normalize_longitudes(
+        numpy.array([p.lon for p in outer]))
     lats = numpy.array([p.lat for p in outer])
-    if lons.min() < -180:
-        lons[lons < 0] += 360
-        lons -= 360
-    elif lons.max() > 180:
-        lons[lons > 0] -= 360
+
+    x0, x1 = lons.min(), lons.max()
+    if numpy.abs(x1 - x0) > 180:
+        if x0 < 0:
+            lons[lons > 0] -= 360
+        else:
+            lons[lons < 0] += 360
+
+    while lons.min() < east:
         lons += 360
+    while lons.max() > west:
+        lons -= 360
 
     color_id = pass_number % len(COLORS)
-    poly = ipyleaflet.Polygon(
+    layers[pass_number] = ipyleaflet.Polygon(
         locations=[(y, x) for x, y in zip(lons, lats)],
         color=COLORS[color_id],
         fill_color=COLORS[color_id],
     )
-    if markers is not None:
+    if pass_number not in markers:
         size = lons.size // 8
         index = max(size, 0) if pass_number % 2 == 0 else min(
             size * 7, size - 1)
@@ -431,35 +336,32 @@ def plot_swath(
         marker.draggable = False
         marker.opacity = 0.8
         marker.popup = ipywidgets.HTML(f'Pass {pass_number}')
-        markers.append(marker)
-    layers.append(poly)
+        markers[pass_number] = marker
 
 
 def plot_selected_passes(map_selection: MapSelection,
-                         df: pandas.DataFrame) -> tuple[list, list]:
+                         df: pandas.DataFrame) -> list[Swath]:
     polygon = map_selection.selection
     bbox = (polygon if polygon is not None else
             pyinterp.geodetic.Box.whole_earth().as_polygon())
 
     left_swath, right_swath = load_polygons(df['pass_number'].values)
 
-    left_layers: list[ipyleaflet.Polygon] = []
-    right_layers: list[ipyleaflet.Polygon] = []
-    markers: list[ipyleaflet.Marker] = []
+    left_layers: dict[int, ipyleaflet.Polygon] = {}
+    right_layers: dict[int, ipyleaflet.Polygon] = {}
+    markers: dict[int, ipyleaflet.Marker] = {}
 
     for pass_number, item in left_swath:
-        plot_swath(pass_number, item, bbox, left_layers,
-                   map_selection.bounds[0][0], map_selection.bounds[1][0],
-                   markers)
-
-    for pass_number, item in right_swath:
-        plot_swath(pass_number, item, bbox, right_layers,
+        plot_swath(pass_number, item, bbox, left_layers, markers,
                    map_selection.bounds[0][0], map_selection.bounds[1][0])
 
-    layers = []
-    for item in left_layers:
-        layers.append(item)
-    for item in right_layers:
-        layers.append(item)
+    for pass_number, item in right_swath:
+        plot_swath(pass_number, item, bbox, right_layers, markers,
+                   map_selection.bounds[0][0], map_selection.bounds[1][0])
 
-    return markers, layers
+    layers: list[Swath] = [
+        Swath(left=left_layers.get(pass_number, ipyleaflet.Polygon()),
+              right=right_layers.get(pass_number, ipyleaflet.Polygon()),
+              marker=marker) for pass_number, marker in markers.items()
+    ]
+    return layers
