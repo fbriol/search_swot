@@ -456,8 +456,10 @@ def plot_selected_passes(map_selection: MapSelection,
         plot_swath(pass_number, item, bbox, right_layers,
                    map_selection.bounds[0][0], map_selection.bounds[1][0])
 
-    layers = [None] * (len(left_layers) * 2)
-    layers[::2] = left_layers
-    layers[1::2] = right_layers
+    layers = []
+    for item in left_layers:
+        layers.append(item)
+    for item in right_layers:
+        layers.append(item)
 
     return markers, layers
