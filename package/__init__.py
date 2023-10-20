@@ -307,7 +307,7 @@ def plot_swath(
     outer = item[0].outer
 
     lons = pyinterp.geodetic.normalize_longitudes(
-        numpy.array([p.lon for p in outer]))
+        numpy.array([p.lon for p in outer]), east)
     lats = numpy.array([p.lat for p in outer])
 
     x0, x1 = lons.min(), lons.max()
@@ -316,11 +316,6 @@ def plot_swath(
             lons[lons > 0] -= 360
         else:
             lons[lons < 0] += 360
-
-    while lons.min() < east:
-        lons += 360
-    while lons.max() > west:
-        lons -= 360
 
     color_id = pass_number % len(COLORS)
     layers[pass_number] = ipyleaflet.Polygon(
