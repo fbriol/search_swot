@@ -77,6 +77,7 @@ def get_selected_passes(
         cycle_numbers = numpy.repeat(
             numpy.arange(indices[0], indices[-1]) + 1, PASSES_PER_CYCLE)
         axis_slice = axis[indices[0]:indices[-1] + 1]
+        first_date_of_cycle = numpy.repeat(axis_slice, PASSES_PER_CYCLE)
         pass_numbers = numpy.tile(numpy.arange(1, PASSES_PER_CYCLE + 1),
                                   indices[-1] - indices[0])
         dates_of_selected_passes = numpy.vstack(
@@ -95,8 +96,8 @@ def get_selected_passes(
         axis_slice = slice(selected_passes[0], selected_passes[-1])
         result['cycle_number'] = cycle_numbers[axis_slice]
         result['pass_number'] = pass_numbers[axis_slice]
-        result['first_measurement'] = dates_of_selected_passes[axis_slice]
-        result['last_measurement'] = dates_of_selected_passes[axis_slice]
+        result['first_measurement'] = first_date_of_cycle[axis_slice]
+        result['last_measurement'] = first_date_of_cycle[axis_slice]
         return pandas.DataFrame(result)
 
 

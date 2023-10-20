@@ -299,23 +299,19 @@ def plot_swath(
     layers: dict[int, ipyleaflet.Polygon],
     markers: dict[int, ipyleaflet.Marker],
     east: float,
-    west: float,
 ) -> None:
     item = item.intersection(bbox)
     if len(item) == 0:
         return
     outer = item[0].outer
 
-    lons = pyinterp.geodetic.normalize_longitudes(
-        numpy.array([p.lon for p in outer]), east)
+    lons = numpy.array([p.lon for p in outer])
     lats = numpy.array([p.lat for p in outer])
-
-    x0, x1 = lons.min(), lons.max()
-    if numpy.abs(x1 - x0) > 180:
-        if x0 < 0:
-            lons[lons > 0] -= 360
-        else:
-            lons[lons < 0] += 360
+    lons = numpy.deg2rad(
+        pyinterp.geodetic.normalize_longitudes(
+            numpy.array([p.lon for p in outer]), east))
+    lons = numpy.unwrap(lons, discont=numpy.pi)
+    lons = numpy.rad2deg(lons)
 
     color_id = pass_number % len(COLORS)
     layers[pass_number] = ipyleaflet.Polygon(
@@ -345,14 +341,12 @@ def plot_selected_passes(map_selection: MapSelection,
     left_layers: dict[int, ipyleaflet.Polygon] = {}
     right_layers: dict[int, ipyleaflet.Polygon] = {}
     markers: dict[int, ipyleaflet.Marker] = {}
-
+    east = map_selection.bounds[0][0]
     for pass_number, item in left_swath:
-        plot_swath(pass_number, item, bbox, left_layers, markers,
-                   map_selection.bounds[0][0], map_selection.bounds[1][0])
+        plot_swath(pass_number, item, bbox, left_layers, markers, east)
 
     for pass_number, item in right_swath:
-        plot_swath(pass_number, item, bbox, right_layers, markers,
-                   map_selection.bounds[0][0], map_selection.bounds[1][0])
+        plot_swath(pass_number, item, bbox, right_layers, markers, east)
 
     layers: list[Swath] = [
         Swath(left=left_layers.get(pass_number, ipyleaflet.Polygon()),
