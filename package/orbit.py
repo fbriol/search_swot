@@ -43,22 +43,24 @@ def calculate_cycle_axis(
     """
     cycles = orf.load(ORF)
 
-    cycle_first_measurement = numpy.full((200, ),
-                                         numpy.datetime64('NAT'),
-                                         dtype='M8[ns]')
-    for item in sorted(cycles):
+    cycle_first_measurement = numpy.full(
+        (200, ),
+        numpy.datetime64('NAT'),
+        dtype='M8[ns]',
+    )
+    keys = sorted(cycles)
+    for item in keys:
         cycle_first_measurement[item - 1] = cycles[item]
     undefined = numpy.isnat(cycle_first_measurement)
     cycle_first_measurement[undefined] = numpy.full(
         (undefined.sum(), ), cycle_duration, dtype='m8[ns]') * numpy.arange(
-            1, 1 + undefined.sum()) + cycles[item]
+            1, 1 + undefined.sum()) + cycles[keys[-1]]
     return pyinterp.TemporalAxis(cycle_first_measurement)
 
 
 def get_selected_passes(
         date: numpy.datetime64,
-        search_duration: numpy.timedelta64 | None = None
-) -> pyinterp.TemporalAxis:
+        search_duration: numpy.timedelta64 | None = None) -> pandas.DataFrame:
     """Return the selected passes.
 
     Args:
@@ -102,8 +104,8 @@ def get_selected_passes(
 
 
 def get_pass_passage_time(
-        selected_passes: numpy.ndarray,
-        polygon: pyinterp.geodetic.Polygon | None) -> numpy.ndarray:
+        selected_passes: pandas.DataFrame,
+        polygon: pyinterp.geodetic.Polygon | None) -> pandas.DataFrame:
     """Return the passage time of the selected passes.
 
     Args:
@@ -119,10 +121,11 @@ def get_pass_passage_time(
         lat = ds.line_string_lat[passes, :].values
         pass_time = ds.pass_time[passes, :].values
 
-    result: numpy.ndarray = numpy.ndarray((len(passes), ),
-                                          dtype=[('pass_number', numpy.uint16),
-                                                 ('first_time', 'm8[ns]'),
-                                                 ('last_time', 'm8[ns]')])
+    result: numpy.ndarray = numpy.ndarray(
+        (len(passes), ),
+        dtype=[('pass_number', numpy.uint16), ('first_time', 'm8[ns]'),
+               ('last_time', 'm8[ns]')],
+    )
 
     jx = 0
 

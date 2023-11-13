@@ -61,12 +61,14 @@ POPUP_TEMPLATE = """
 """
 
 #: HTML Template for the popup of the marker
-DOWNLOAD_TEMPLATE = """
-<a href="data:file/csv;base64,{b64} download="selected_passes.csv">
-<button style="background-color: #4285F4; color: white; border-radius: 4px;
-padding: 10px 16px; font-size: 14px; font-weight: bold; border: none;
-cursor: pointer;">Download data as a CSV file</button></a>
-"""
+DOWNLOAD_TEMPLATE = """<a href="data:file/csv;base64,{b64}"
+download="selected_passes.csv"><button style="background-color: #4285F4;
+color: white; border-radius: 4px; padding: 10px 16px; font-size: 14px;
+font-weight: bold; border: none; cursor: pointer;">
+Download data as a CSV file</button></a>"""
+
+#: Type of a pass polygon
+PassPolygon = tuple[int, pyinterp.geodetic.Polygon]
 
 
 @dataclasses.dataclass
@@ -139,7 +141,7 @@ class MapSelection():
         self.main_widget = ipywidgets.VBox([self.m, self.out])
         draw_control.on_draw(self.handle_draw)
         self.search.on_click(self.handle_compute)
-        self.widget_error = None
+        self.widget_error: ipywidgets.VBox | None = None
 
     def display(self) -> ipywidgets.Widget:
         return self.main_widget
@@ -246,7 +248,7 @@ class MapSelection():
                 str(err) + '<br>'.join(traceback.format_exc().splitlines()))
 
 
-class MainWidget():
+class MainWidget:
 
     def __init__(self) -> None:
         self.map_selection = MapSelection()
@@ -262,7 +264,7 @@ class MainWidget():
         return self.panel
 
 
-def _load_one_polygons(x, y):
+def _load_one_polygons(x, y) -> pyinterp.geodetic.Polygon:
     m = numpy.isfinite(x) & numpy.isfinite(y)
     x = x[m]
     y = y[m]
@@ -270,11 +272,13 @@ def _load_one_polygons(x, y):
         [pyinterp.geodetic.Point(x, y) for x, y in zip(x, y)])
 
 
-def load_polygons(pass_number: numpy.ndarray):
+def load_polygons(
+        pass_number: numpy.ndarray
+) -> tuple[list[PassPolygon], list[PassPolygon]]:
     index = pass_number - 1
 
-    left_polygon = []
-    right_polygon = []
+    left_polygon: list[PassPolygon] = []
+    right_polygon: list[PassPolygon] = []
 
     with xarray.open_dataset(orbit.DATASET) as ds:
         for ix in index:
@@ -290,7 +294,7 @@ def load_polygons(pass_number: numpy.ndarray):
 
 
 def compute_selected_passes(date_selection: DateSelection,
-                            map_selection: MapSelection):
+                            map_selection: MapSelection) -> pandas.DataFrame:
     if map_selection.selection is None:
         raise ValueError('No area selected.')
     first_date, search_duration = date_selection.values()
@@ -324,10 +328,10 @@ def plot_swath(
     markers: dict[int, ipyleaflet.Marker],
     east: float,
 ) -> None:
-    item = item.intersection(bbox)
-    if len(item) == 0:
+    intersection = item.intersection(bbox)
+    if len(intersection) == 0:
         return
-    outer = item[0].outer
+    outer = intersection[0].outer
 
     lons = numpy.array([p.lon for p in outer])
     lats = numpy.array([p.lat for p in outer])
@@ -359,10 +363,12 @@ def plot_swath(
 def plot_selected_passes(map_selection: MapSelection,
                          df: pandas.DataFrame) -> list[Swath]:
     polygon = map_selection.selection
-    bbox = (polygon if polygon is not None else
-            pyinterp.geodetic.Box.whole_earth().as_polygon())
+    bbox: pyinterp.geodetic.Polygon = (  # type: ignore[assignment]
+        polygon if polygon is not None else
+        pyinterp.geodetic.Box.whole_earth().as_polygon())
 
-    left_swath, right_swath = load_polygons(df['pass_number'].values)
+    (left_swath, right_swath) = load_polygons(
+        df['pass_number'].values)  # type: ignore[arg-type]
 
     left_layers: dict[int, ipyleaflet.Polygon] = {}
     right_layers: dict[int, ipyleaflet.Polygon] = {}

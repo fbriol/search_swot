@@ -66,7 +66,7 @@ def load(filename: os.PathLike) -> dict[int, numpy.datetime64]:
         Dictionary of cycle numbers and dates.
     """
     filename = pathlib.Path(filename)
-    with filename.open() as stream:
+    with filename.open(encoding='UTF-8') as stream:
         entries: dict[int, numpy.datetime64] = {}
         previous_cycle: int = -1
         for line in stream:
