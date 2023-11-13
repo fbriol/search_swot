@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import dataclasses
 import datetime
 import traceback
@@ -57,6 +58,14 @@ POPUP_TEMPLATE = """
     margin-right: 5px;"></div>
     Pass {pass_number}
 </div>
+"""
+
+#: HTML Template for the popup of the marker
+DOWNLOAD_TEMPLATE = """
+<a href="data:file/csv;base64,{b64} download="selected_passes.csv">
+<button style="background-color: #4285F4; color: white; border-radius: 4px;
+padding: 10px 16px; font-size: 14px; font-weight: bold; border: none;
+cursor: pointer;">Download data as a CSV file</button></a>
 """
 
 
@@ -223,6 +232,11 @@ class MapSelection():
             self.out.clear_output()
             with self.out:
                 IPython.display.display(selected_passes)
+                # Generate a link to download the data as a CSV file.
+                csv = selected_passes.to_csv(sep=';', index=False)
+                b64 = base64.b64encode(csv.encode()).decode()
+                IPython.display.display(
+                    ipywidgets.HTML(DOWNLOAD_TEMPLATE.format(b64=b64)))
         except InvalidDate as err:
             self.out.clear_output()
             self.display_error(str(err))
