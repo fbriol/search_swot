@@ -49,6 +49,16 @@ COLORS: list[str] = [
     'yellow', 'yellowgreen'
 ]
 
+#: HTML Template for the popup of the marker
+POPUP_TEMPLATE = """
+<div style="text-align: center; font-weight: bold;">
+    <div style="display: inline-block; width: 10px; height: 10px;
+    border: 1px solid black; background-color: {color};
+    margin-right: 5px;"></div>
+    Pass {pass_number}
+</div>
+"""
+
 
 @dataclasses.dataclass
 class Swath:
@@ -326,7 +336,9 @@ def plot_swath(
         marker = ipyleaflet.Marker(location=(lats[index], lons[index]))
         marker.draggable = False
         marker.opacity = 0.8
-        marker.popup = ipywidgets.HTML(f'Pass {pass_number}')
+        marker.popup = ipywidgets.HTML(
+            POPUP_TEMPLATE.format(color=COLORS[color_id],
+                                  pass_number=pass_number))
         markers[pass_number] = marker
 
 
