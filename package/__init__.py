@@ -231,7 +231,7 @@ class MapSelection():
                 self.out.clear_output()
                 self.display_message(
                     'No pass found in the selected area. Please select '
-                    'another area.',
+                    'another area or extend the search period.',
                     button_style='warning')
                 return
 
