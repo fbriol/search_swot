@@ -218,7 +218,7 @@ class MapSelection():
                 if self.widget_error is None:
                     self.display_error(
                         'Please select an area by drawing a rectangle on the '
-                        'map, then click on the <b>Compute</b> button.')
+                        'map, then click on the <b>Search</b> button.')
                 return
             self.clear_last_layers()
             with self.out:
