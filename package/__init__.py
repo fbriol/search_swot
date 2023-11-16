@@ -194,11 +194,12 @@ class MapSelection():
         except (KeyError, IndexError):
             self.selection = None
 
-    def display_error(self, msg) -> None:
+    def display_message(self, msg, button_style: str | None = None) -> None:
+        button_style = button_style or 'danger'
         panel = ipywidgets.HTML(msg)
         close = ipywidgets.Button(description='Close.',
                                   disabled=False,
-                                  button_style='danger')
+                                  button_style=button_style)
         self.widget_error = ipywidgets.VBox([panel, close])
         assert self.widget_error is not None
         self.widget_error.box_style = 'danger'
@@ -216,7 +217,7 @@ class MapSelection():
         try:
             if self.selection is None:
                 if self.widget_error is None:
-                    self.display_error(
+                    self.display_message(
                         'Please select an area by drawing a rectangle on the '
                         'map, then click on the <b>Search</b> button.')
                 return
@@ -225,6 +226,14 @@ class MapSelection():
                 IPython.display.display('Computing...')
             selected_passes = compute_selected_passes(self.date_selection,
                                                       self)
+
+            if len(selected_passes) == 0:
+                self.out.clear_output()
+                self.display_message(
+                    'No pass found in the selected area. Please select '
+                    'another area.',
+                    button_style='warning')
+                return
 
             self.swaths = plot_selected_passes(self, selected_passes)
             # Rename the columns "first_measurement" and "last_measurement"
@@ -253,10 +262,10 @@ class MapSelection():
                     ipywidgets.HTML(DOWNLOAD_TEMPLATE.format(b64=b64)))
         except InvalidDate as err:
             self.out.clear_output()
-            self.display_error(str(err))
+            self.display_message(str(err))
         except Exception as err:
             self.out.clear_output()
-            self.display_error(
+            self.display_message(
                 str(err) + '<br>'.join(traceback.format_exc().splitlines()))
 
 
