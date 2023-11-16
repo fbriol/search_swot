@@ -227,6 +227,18 @@ class MapSelection():
                                                       self)
 
             self.swaths = plot_selected_passes(self, selected_passes)
+            # Rename the columns "first_measurement" and "last_measurement"
+            # to "first date" and "last date"
+            selected_passes.rename(
+                columns={
+                    'first_measurement': 'First date',
+                    'last_measurement': 'Fast date',
+                    'cycle_number': 'Cycle number',
+                    'pass_number': 'Pass number'
+                },
+                inplace=True,
+            )
+
             for item in self.swaths:
                 self.m.add_layer(item.left)
                 self.m.add_layer(item.right)
