@@ -1,18 +1,21 @@
+"""Read the ORF file."""
 from __future__ import annotations
 
 from typing import NamedTuple
+from collections.abc import Callable
+import functools
 import os
 import pathlib
 import re
-from re import Match
 
 import numpy
 
 #: Regular expression to parse a line of the ORF file
-ENTRY = re.compile(r'(?P<year>\d{4})\/(?P<month>\d{2})\/(?P<day>\d{2})\s+'
-                   r'(?P<time>\d{2}:\d{2}:\d{2}\.\d{3})\s+(?P<cycle>\d+)\s+'
-                   r'(?P<pass>\d+)\s+\d+\s+(?P<lon>-?\d+\.\d+)\s+'
-                   r'(?P<lat>-?\d+\.\d+)').search
+ENTRY: Callable[[str], re.Match | None] = re.compile(
+    r'(?P<year>\d{4})\/(?P<month>\d{2})\/(?P<day>\d{2})\s+'
+    r'(?P<time>\d{2}:\d{2}:\d{2}\.\d{3})\s+(?P<cycle>\d+)\s+'
+    r'(?P<pass>\d+)\s+\d+\s+(?P<lon>-?\d+\.\d+)\s+'
+    r'(?P<lat>-?\d+\.\d+)').search
 
 
 class Entry(NamedTuple):
@@ -41,7 +44,7 @@ class Entry(NamedTuple):
         Returns:
             Entry or None if the line is not valid
         """
-        match: Match[str] | None = ENTRY(line)
+        match: re.Match[str] | None = ENTRY(line)
         if match is None:
             return None
         return cls(
@@ -55,6 +58,7 @@ class Entry(NamedTuple):
         )
 
 
+@functools.lru_cache(maxsize=1)
 def load(filename: os.PathLike) -> dict[int, numpy.datetime64]:
     """Load an ORF file and return for each cycle numbers the first measurement
     of the pass at the equator.

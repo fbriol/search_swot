@@ -1,6 +1,10 @@
+"""Calculate the ephemeredes of the SWOT satellite."""
+from __future__ import annotations
+
 import pathlib
 
 import numpy
+from numpy.typing import NDArray
 import pandas
 import pyinterp
 import xarray
@@ -103,6 +107,35 @@ def get_selected_passes(
         return pandas.DataFrame(result)
 
 
+def _get_time_bounds(
+    lat_nadir: NDArray,
+    selected_time: NDArray,
+    intersection: pyinterp.geodetic.LineString,
+) -> tuple[numpy.datetime64, numpy.datetime64]:
+    """Return the time bounds of the selected pass.
+
+    Args:
+        lat_nadir: Latitude of the nadir.
+        selected_time: Time of the selected pass.
+        intersection: Intersection of the pass with the polygon.
+
+    Returns:
+        Time bounds of the selected pass.
+    """
+    # Remove NaN values
+    lat_nadir = lat_nadir[numpy.isfinite(lat_nadir)]
+    if lat_nadir[0] > lat_nadir[-1]:
+        lat_nadir = lat_nadir[::-1]
+    y0 = intersection[0].lat
+    y1 = intersection[1].lat if len(intersection) > 1 else y0
+    t0 = numpy.searchsorted(lat_nadir, y0)
+    t1 = numpy.searchsorted(lat_nadir, y1)
+    return (
+        selected_time[min(t0, t1)],
+        selected_time[max(t0, t1)],
+    )
+
+
 def get_pass_passage_time(
         selected_passes: pandas.DataFrame,
         polygon: pyinterp.geodetic.Polygon | None) -> pandas.DataFrame:
@@ -117,11 +150,11 @@ def get_pass_passage_time(
     """
     passes = numpy.array(sorted(set(selected_passes['pass_number']))) - 1
     with xarray.open_dataset(DATASET) as ds:
-        lon = ds.line_string_lon[passes, :].values
-        lat = ds.line_string_lat[passes, :].values
-        pass_time = ds.pass_time[passes, :].values
+        lon = ds.line_string_lon.values[passes, :]
+        lat = ds.line_string_lat.values[passes, :]
+        pass_time = ds.pass_time.values[passes, :]
 
-    result: numpy.ndarray = numpy.ndarray(
+    result: NDArray[numpy.void] = numpy.ndarray(
         (len(passes), ),
         dtype=[('pass_number', numpy.uint16), ('first_time', 'm8[ns]'),
                ('last_time', 'm8[ns]')],
@@ -138,19 +171,13 @@ def get_pass_passage_time(
         intersection = polygon.intersection(
             line_string) if polygon else line_string
         if intersection:
-            lat_nadir = ds.lat_nadir[pass_index, :].values
-            # Remove NaN values
-            lat_nadir = lat_nadir[numpy.isfinite(lat_nadir)]
-            if lat_nadir[0] > lat_nadir[-1]:
-                lat_nadir = lat_nadir[::-1]
-            y0 = intersection[0].lat
-            y1 = intersection[1].lat if len(intersection) > 1 else y0
-            t0 = numpy.searchsorted(lat_nadir, y0)
-            t1 = numpy.searchsorted(lat_nadir, y1)
-            selected_time = pass_time[ix, :]
-            result[jx]['pass_number'] = pass_index + 1
-            result[jx]['first_time'] = selected_time[min(t0, t1)]
-            result[jx]['last_time'] = selected_time[max(t0, t1)]
+            row: NDArray[numpy.void] = result[jx]
+            row['pass_number'] = pass_index + 1
+            row['first_time'], row['last_time'] = _get_time_bounds(
+                lat[ix, :],
+                pass_time[ix, :],
+                intersection,
+            )
             jx += 1
 
     return pandas.DataFrame(result[:jx])
