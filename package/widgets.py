@@ -6,17 +6,14 @@ from collections.abc import Callable
 import dataclasses
 import datetime
 import traceback
-from turtle import back, color
 
 import IPython.display
 import ipyleaflet
 import ipywidgets
-from matplotlib.pyplot import margins
 import numpy
 from numpy.typing import NDArray
 import pandas
 import pyinterp.geodetic
-from pyparsing import line
 import xarray
 
 from . import orbit
